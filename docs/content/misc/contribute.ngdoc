@@ -31,7 +31,7 @@ development web server, run tests, and generate distributable files. Depending o
 pre-packaged bundle.
 
 * [Java](http://www.java.com): We minify JavaScript using our
-[Closure Tools](https://developers.google.com/closure/) jar. Make sure you have Java (version 6 or higher) installed
+[Closure Tools](https://developers.google.com/closure/) jar. Make sure you have Java (version 7 or higher) installed
 and included in your [PATH](http://docs.oracle.com/javase/tutorial/essential/environment/paths.html) variable.
 
 * [Grunt](http://gruntjs.com): We use Grunt as our build system. Install the grunt command-line tool globally with:
@@ -153,7 +153,7 @@ grunt test:unit --browsers Opera,Firefox
 
 Note there should be _no spaces between browsers_. `Opera, Firefox` is INVALID.
 
-During development it's however more productive to continuously run unit tests every time the source or test files
+During development, however, it's more productive to continuously run unit tests every time the source or test files
 change. To execute tests in this mode run:
 
 1. To start the Karma server, capture Chrome browser and run unit tests, run:

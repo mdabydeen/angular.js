@@ -62,6 +62,8 @@ describe('filters', function() {
     it('should format according different separators', function() {
       var num = formatNumber(1234567.1, pattern, '.', ',', 2);
       expect(num).toBe('1.234.567,10');
+      num = formatNumber(1e-14, pattern, '.', ',', 14);
+      expect(num).toBe('0,00000000000001');
     });
 
     it('should format with or without fractionSize', function() {
@@ -85,8 +87,43 @@ describe('filters', function() {
     });
 
     it('should format numbers that round to zero as nonnegative', function() {
-      var num = formatNumber(-0.01, pattern, ',', '.', 1);
-      expect(num).toBe('0.0');
+      expect(formatNumber(-0.01, pattern, ',', '.', 1)).toBe('0.0');
+      expect(formatNumber(-1e-10, pattern, ',', '.', 1)).toBe('0.0');
+      expect(formatNumber(-0.0001, pattern, ',', '.', 3)).toBe('0.000');
+      expect(formatNumber(-0.0000001, pattern, ',', '.', 6)).toBe('0.000000');
+    });
+
+    it('should work with numbers that are close to the limit for exponent notation', function() {
+      // previously, numbers that n * (10 ^ fractionSize) > localLimitMax
+      // were ending up with a second exponent in them, then coercing to
+      // NaN when formatNumber rounded them with the safe rounding
+      // function.
+
+      var localLimitMax = 999999999999999900000,
+          localLimitMin = 10000000000000000000,
+          exampleNumber = 444444444400000000000;
+
+      expect(formatNumber(localLimitMax, pattern, ',', '.', 2))
+        .toBe('999,999,999,999,999,900,000.00');
+      expect(formatNumber(localLimitMin, pattern, ',', '.', 2))
+        .toBe('10,000,000,000,000,000,000.00');
+      expect(formatNumber(exampleNumber, pattern, ',', '.', 2))
+        .toBe('444,444,444,400,000,000,000.00');
+
+    });
+
+    it('should format large number',function() {
+      var num;
+      num = formatNumber(12345868059685210000, pattern, ',', '.', 2);
+      expect(num).toBe('12,345,868,059,685,210,000.00');
+      num = formatNumber(79832749837498327498274983793234322432, pattern, ',', '.', 2);
+      expect(num).toBe('7.98e+37');
+      num = formatNumber(8798327498374983274928, pattern, ',', '.', 2);
+      expect(num).toBe('8,798,327,498,374,983,000,000.00');
+      num = formatNumber(879832749374983274928, pattern, ',', '.', 2);
+      expect(num).toBe('879,832,749,374,983,200,000.00');
+      num = formatNumber(879832749374983274928, pattern, ',', '.', 32);
+      expect(num).toBe('879,832,749,374,983,200,000.00000000000000000000000000000000');
     });
   });
 
@@ -99,7 +136,7 @@ describe('filters', function() {
 
     it('should do basic currency filtering', function() {
       expect(currency(0)).toEqual('$0.00');
-      expect(currency(-999)).toEqual('($999.00)');
+      expect(currency(-999)).toEqual('-$999.00');
       expect(currency(1234.5678, "USD$")).toEqual('USD$1,234.57');
       expect(currency(1234.5678, "USD$", 0)).toEqual('USD$1,235');
     });
@@ -120,6 +157,12 @@ describe('filters', function() {
       expect(currency(0.008)).toBe('$0.01');
       expect(currency(0.003)).toBe('$0.00');
     });
+
+    it('should set the default fraction size to the max fraction size of the locale value', inject(function($locale) {
+      $locale.NUMBER_FORMATS.PATTERNS[1].maxFrac = 1;
+
+      expect(currency(1.07)).toBe('$1.1');
+    }));
   });
 
 
@@ -142,10 +185,10 @@ describe('filters', function() {
       expect(number(Number.NaN)).toEqual('');
       expect(number({})).toEqual('');
       expect(number([])).toEqual('');
-      expect(number(+Infinity)).toEqual('');
-      expect(number(-Infinity)).toEqual('');
+      expect(number(+Infinity)).toEqual('∞');
+      expect(number(-Infinity)).toEqual('-∞');
       expect(number("1234.5678")).toEqual('1,234.568');
-      expect(number(1/0)).toEqual("");
+      expect(number(1 / 0)).toEqual('∞');
       expect(number(1,        2)).toEqual("1.00");
       expect(number(.1,       2)).toEqual("0.10");
       expect(number(.01,      2)).toEqual("0.01");
@@ -176,29 +219,39 @@ describe('filters', function() {
     });
 
     it('should filter exponentially large numbers', function() {
-      expect(number(1e50)).toEqual('1e+50');
-      expect(number(-2e100)).toEqual('-2e+100');
-    });
-
-    it('should ignore fraction sizes for large numbers', function() {
-      expect(number(1e50, 2)).toEqual('1e+50');
-      expect(number(-2e100, 5)).toEqual('-2e+100');
+      expect(number(1.23e50)).toEqual('1.23e+50');
+      expect(number(-2.3456e100)).toEqual('-2.346e+100');
+      expect(number(1e50, 2)).toEqual('1.00e+50');
+      expect(number(-2e100, 5)).toEqual('-2.00000e+100');
     });
 
     it('should filter exponentially small numbers', function() {
       expect(number(1e-50, 0)).toEqual('0');
       expect(number(1e-6, 6)).toEqual('0.000001');
       expect(number(1e-7, 6)).toEqual('0.000000');
+      expect(number(9e-7, 6)).toEqual('0.000001');
 
       expect(number(-1e-50, 0)).toEqual('0');
       expect(number(-1e-6, 6)).toEqual('-0.000001');
-      expect(number(-1e-7, 6)).toEqual('-0.000000');
+      expect(number(-1e-7, 6)).toEqual('0.000000');
+      expect(number(-1e-8, 9)).toEqual('-0.000000010');
+    });
+
+    it('should filter exponentially small numbers when no fraction specified', function() {
+      expect(number(1e-10)).toEqual('0.000');
+      expect(number(0.0000000001)).toEqual('0.000');
+
+      expect(number(-1e-10)).toEqual('0.000');
+      expect(number(-0.0000000001)).toEqual('0.000');
     });
   });
 
   describe('json', function() {
     it('should do basic filter', function() {
       expect(filter('json')({a:"b"})).toEqual(toJson({a:"b"}, true));
+    });
+    it('should allow custom indentation', function() {
+      expect(filter('json')({a:"b"}, 4)).toEqual(toJson({a:"b"}, 4));
     });
   });
 
@@ -232,6 +285,11 @@ describe('filters', function() {
     it('should ignore falsy inputs', function() {
       expect(date(null)).toBeNull();
       expect(date('')).toEqual('');
+    });
+
+    it('should ignore invalid dates', function() {
+      var invalidDate = new Date('abc');
+      expect(date(invalidDate)).toBe(invalidDate);
     });
 
     it('should do basic filter', function() {
@@ -280,6 +338,18 @@ describe('filters', function() {
 
       expect(date(earlyDate, "MMMM dd, y")).
                       toEqual('September 03, 1');
+
+      expect(date(noon, "MMMM dd, y G")).
+                      toEqual('September 03, 2010 AD');
+
+      expect(date(noon, "MMMM dd, y GG")).
+                      toEqual('September 03, 2010 AD');
+
+      expect(date(noon, "MMMM dd, y GGG")).
+                      toEqual('September 03, 2010 AD');
+
+      expect(date(noon, "MMMM dd, y GGGG")).
+                      toEqual('September 03, 2010 Anno Domini');
     });
 
     it('should accept negative numbers as strings', function() {
@@ -311,6 +381,36 @@ describe('filters', function() {
 
       expect(date(westOfUTCPartial, "yyyy-MM-ddTHH:mm:ssZ")).
                     toEqual('2010-09-03T06:35:08-0530');
+    });
+
+    it('should correctly calculate week number', function() {
+      function formatWeek(dateToFormat) {
+        return date(new angular.mock.TzDate(+5, dateToFormat + 'T12:00:00.000Z'), 'ww (EEE)');
+      }
+
+      expect(formatWeek('2007-01-01')).toEqual('01 (Mon)');
+      expect(formatWeek('2007-12-31')).toEqual('53 (Mon)');
+
+      expect(formatWeek('2008-01-01')).toEqual('01 (Tue)');
+      expect(formatWeek('2008-12-31')).toEqual('53 (Wed)');
+
+      expect(formatWeek('2014-01-01')).toEqual('01 (Wed)');
+      expect(formatWeek('2014-12-31')).toEqual('53 (Wed)');
+
+      expect(formatWeek('2009-01-01')).toEqual('01 (Thu)');
+      expect(formatWeek('2009-12-31')).toEqual('53 (Thu)');
+
+      expect(formatWeek('2010-01-01')).toEqual('00 (Fri)');
+      expect(formatWeek('2010-12-31')).toEqual('52 (Fri)');
+
+      expect(formatWeek('2011-01-01')).toEqual('00 (Sat)');
+      expect(formatWeek('2011-01-02')).toEqual('01 (Sun)');
+      expect(formatWeek('2011-01-03')).toEqual('01 (Mon)');
+      expect(formatWeek('2011-12-31')).toEqual('52 (Sat)');
+
+      expect(formatWeek('2012-01-01')).toEqual('01 (Sun)');
+      expect(formatWeek('2012-01-02')).toEqual('01 (Mon)');
+      expect(formatWeek('2012-12-31')).toEqual('53 (Mon)');
     });
 
     it('should treat single quoted strings as string literals', function() {
@@ -393,7 +493,7 @@ describe('filters', function() {
     it('should support different degrees of subsecond precision', function() {
       var format = 'yyyy-MM-dd ss';
 
-      var localDay = new Date(Date.UTC(2003, 9-1, 10, 13, 2, 3, 123)).getDate();
+      var localDay = new Date(Date.UTC(2003, 9 - 1, 10, 13, 2, 3, 123)).getDate();
 
       expect(date('2003-09-10T13:02:03.12345678Z', format)).toEqual('2003-09-' + localDay + ' 03');
       expect(date('2003-09-10T13:02:03.1234567Z', format)).toEqual('2003-09-' + localDay + ' 03');
@@ -408,6 +508,16 @@ describe('filters', function() {
     it('should use UTC if the timezone is set to "UTC"', function() {
       expect(date(new Date(2003, 8, 10, 3, 2, 4), 'yyyy-MM-dd HH-mm-ss')).toEqual('2003-09-10 03-02-04');
       expect(date(new Date(Date.UTC(2003, 8, 10, 3, 2, 4)), 'yyyy-MM-dd HH-mm-ss', 'UTC')).toEqual('2003-09-10 03-02-04');
+      expect(date(new Date(Date.UTC(2003, 8, 10, 3, 2, 4)), 'yyyy-MM-dd HH-mm-ssZ', 'UTC')).toEqual('2003-09-10 03-02-04+0000');
+    });
+
+    it('should support conversion to any timezone', function() {
+      expect(date(new Date(Date.UTC(2003, 8, 10, 3, 2, 4)), 'yyyy-MM-dd HH-mm-ssZ', 'GMT+0500')).toEqual('2003-09-10 08-02-04+0500');
+    });
+
+    it('should fallback to default timezone in case an unknown timezone was passed', function() {
+      var value = new Date(2003, 8, 10, 3, 2, 4);
+      expect(date(value, 'yyyy-MM-dd HH-mm-ssZ', 'WTF')).toEqual(date(value, 'yyyy-MM-dd HH-mm-ssZ'));
     });
   });
 });

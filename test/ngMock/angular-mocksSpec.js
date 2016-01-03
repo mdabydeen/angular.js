@@ -6,7 +6,7 @@ describe('ngMock', function() {
   describe('TzDate', function() {
 
     function minutes(min) {
-      return min*60*1000;
+      return min * 60 * 1000;
     }
 
     it('should look like a Date', function() {
@@ -321,11 +321,15 @@ describe('ngMock', function() {
         inject(function($interval, $rootScope) {
       var applySpy = spyOn($rootScope, '$apply').andCallThrough();
 
-      $interval(noop, 1000, 0, false);
+      var counter = 0;
+      $interval(function increment() { counter++; }, 1000, 0, false);
+
       expect(applySpy).not.toHaveBeenCalled();
+      expect(counter).toBe(0);
 
       $interval.flush(2000);
       expect(applySpy).not.toHaveBeenCalled();
+      expect(counter).toBe(2);
     }));
 
 
@@ -533,7 +537,7 @@ describe('ngMock', function() {
 
     function logFn(text) {
       return function() {
-        log += text +';';
+        log += text + ';';
       };
     }
 
@@ -588,22 +592,42 @@ describe('ngMock', function() {
     }));
 
 
-    it('should log exceptions', module(function($exceptionHandlerProvider) {
-      $exceptionHandlerProvider.mode('log');
-      var $exceptionHandler = $exceptionHandlerProvider.$get();
-      $exceptionHandler('MyError');
-      expect($exceptionHandler.errors).toEqual(['MyError']);
+    it('should log exceptions', function() {
+      module(function($exceptionHandlerProvider) {
+        $exceptionHandlerProvider.mode('log');
+      });
+      inject(function($exceptionHandler) {
+        $exceptionHandler('MyError');
+        expect($exceptionHandler.errors).toEqual(['MyError']);
 
-      $exceptionHandler('MyError', 'comment');
-      expect($exceptionHandler.errors[1]).toEqual(['MyError', 'comment']);
-    }));
+        $exceptionHandler('MyError', 'comment');
+        expect($exceptionHandler.errors[1]).toEqual(['MyError', 'comment']);
+      });
+    });
 
+    it('should log and rethrow exceptions', function() {
+      module(function($exceptionHandlerProvider) {
+        $exceptionHandlerProvider.mode('rethrow');
+      });
+      inject(function($exceptionHandler) {
+        expect(function() { $exceptionHandler('MyError'); }).toThrow('MyError');
+        expect($exceptionHandler.errors).toEqual(['MyError']);
 
-    it('should throw on wrong argument', module(function($exceptionHandlerProvider) {
-      expect(function() {
-        $exceptionHandlerProvider.mode('XXX');
-      }).toThrow("Unknown mode 'XXX', only 'log'/'rethrow' modes are allowed!");
-    }));
+        expect(function() { $exceptionHandler('MyError', 'comment'); }).toThrow('MyError');
+        expect($exceptionHandler.errors[1]).toEqual(['MyError', 'comment']);
+      });
+    });
+
+    it('should throw on wrong argument', function() {
+      module(function($exceptionHandlerProvider) {
+        expect(function() {
+          $exceptionHandlerProvider.mode('XXX');
+        }).toThrow("Unknown mode 'XXX', only 'log'/'rethrow' modes are allowed!");
+      });
+
+      inject(); // Trigger the tests in `module`
+    });
+
   });
 
 
@@ -695,8 +719,6 @@ describe('ngMock', function() {
 
     it('should serialize scope that has overridden "hasOwnProperty"', inject(function($rootScope, $sniffer) {
       /* jshint -W001 */
-      // MS IE8 just doesn't work for this kind of thing, since "for ... in" doesn't return
-      // things like hasOwnProperty even if it is explicitly defined on the actual object!
       $rootScope.hasOwnProperty = 'X';
       expect(d($rootScope)).toMatch(/Scope\(.*\): \{/);
       expect(d($rootScope)).toMatch(/hasOwnProperty: "X"/);
@@ -763,6 +785,39 @@ describe('ngMock', function() {
             expect(testFn.$$hashKey).toBeUndefined();
           });
         });
+
+        describe('$inject cleanup', function() {
+          function testFn() {
+
+          }
+
+          it('should add $inject when invoking test function', inject(function($injector) {
+            $injector.invoke(testFn);
+            expect(testFn.$inject).toBeDefined();
+          }));
+
+          it('should cleanup $inject after previous test', function() {
+            expect(testFn.$inject).toBeUndefined();
+          });
+
+          it('should add $inject when annotating test function', inject(function($injector) {
+            $injector.annotate(testFn);
+            expect(testFn.$inject).toBeDefined();
+          }));
+
+          it('should cleanup $inject after previous test', function() {
+            expect(testFn.$inject).toBeUndefined();
+          });
+
+          it('should invoke an already annotated function', inject(function($injector) {
+            testFn.$inject = [];
+            $injector.invoke(testFn);
+          }));
+
+          it('should not cleanup $inject after previous test', function() {
+            expect(testFn.$inject).toBeDefined();
+          });
+        });
       });
 
       describe('in DSL', function() {
@@ -776,6 +831,19 @@ describe('ngMock', function() {
         });
       });
 
+      describe('nested calls', function() {
+        it('should invoke nested module calls immediately', function() {
+          module(function($provide) {
+            $provide.constant('someConst', 'blah');
+            module(function(someConst) {
+              log = someConst;
+            });
+          });
+          inject(function() {
+            expect(log).toBe('blah');
+          });
+        });
+      });
 
       describe('inline in test', function() {
         it('should load module', function() {
@@ -849,10 +917,6 @@ describe('ngMock', function() {
       });
 
 
-      // We don't run the following tests on IE8.
-      // IE8 throws "Object does not support this property or method." error,
-      // when thrown from a function defined on window (which `inject` is).
-
       it('should not change thrown Errors', inject(function($sniffer) {
         expect(function() {
           inject(function() {
@@ -897,6 +961,11 @@ describe('ngMock', function() {
       expect(typeof hb.whenPATCH).toBe("function");
       expect(typeof hb.whenDELETE).toBe("function");
       expect(typeof hb.whenHEAD).toBe("function");
+    });
+
+    it('should provide "route" shortcuts for expect and when', function() {
+      expect(typeof hb.whenRoute).toBe("function");
+      expect(typeof hb.expectRoute).toBe("function");
     });
 
 
@@ -1055,17 +1124,6 @@ describe('ngMock', function() {
         expect(callback).toHaveBeenCalledOnceWith(200, 'first', 'header: val', 'OK');
       });
 
-      it('should take function', function() {
-        hb.expect('GET', '/some').respond(function(m, u, d, h) {
-          return [301, m + u + ';' + d + ';a=' + h.a, {'Connection': 'keep-alive'}, 'Moved Permanently'];
-        });
-
-        hb('GET', '/some', 'data', callback, {a: 'b'});
-        hb.flush();
-
-        expect(callback).toHaveBeenCalledOnceWith(301, 'GET/some;data;a=b', 'Connection: keep-alive', 'Moved Permanently');
-      });
-
       it('should default status code to 200', function() {
         callback.andCallFake(function(status, response) {
           expect(status).toBe(200);
@@ -1081,6 +1139,48 @@ describe('ngMock', function() {
         expect(callback.callCount).toBe(2);
       });
 
+      it('should default status code to 200 and provide status text', function() {
+        hb.expect('GET', '/url1').respond('first', {'header': 'val'}, 'OK');
+        hb('GET', '/url1', null, callback);
+        hb.flush();
+
+        expect(callback).toHaveBeenCalledOnceWith(200, 'first', 'header: val', 'OK');
+      });
+
+      it('should take function', function() {
+        hb.expect('GET', '/some?q=s').respond(function(m, u, d, h, p) {
+          return [301, m + u + ';' + d + ';a=' + h.a + ';q=' + p.q, {'Connection': 'keep-alive'}, 'Moved Permanently'];
+        });
+
+        hb('GET', '/some?q=s', 'data', callback, {a: 'b'});
+        hb.flush();
+
+        expect(callback).toHaveBeenCalledOnceWith(301, 'GET/some?q=s;data;a=b;q=s', 'Connection: keep-alive', 'Moved Permanently');
+      });
+
+      it('should decode query parameters in respond() function', function() {
+        hb.expect('GET', '/url?query=l%E2%80%A2ng%20string%20w%2F%20spec%5Eal%20char%24&id=1234&orderBy=-name')
+        .respond(function(m, u, d, h, p) {
+          return [200, "id=" + p.id + ";orderBy=" + p.orderBy + ";query=" + p.query];
+        });
+
+        hb('GET', '/url?query=l%E2%80%A2ng%20string%20w%2F%20spec%5Eal%20char%24&id=1234&orderBy=-name', null, callback);
+        hb.flush();
+
+        expect(callback).toHaveBeenCalledOnceWith(200, 'id=1234;orderBy=-name;query=l•ng string w/ spec^al char$', '', '');
+      });
+
+      it('should include regex captures in respond() params when keys provided', function() {
+        hb.expect('GET', /\/(.+)\/article\/(.+)/, undefined, undefined, ['id', 'name'])
+        .respond(function(m, u, d, h, p) {
+          return [200, "id=" + p.id + ";name=" + p.name];
+        });
+
+        hb('GET', '/1234/article/cool-angular-article', null, callback);
+        hb.flush();
+
+        expect(callback).toHaveBeenCalledOnceWith(200, 'id=1234;name=cool-angular-article', '', '');
+      });
 
       it('should default response headers to ""', function() {
         hb.expect('GET', '/url1').respond(200, 'first');
@@ -1162,7 +1262,7 @@ describe('ngMock', function() {
       });
 
 
-      it ('should throw exception when only headers differs from expectation', function() {
+      it('should throw exception when only headers differs from expectation', function() {
         hb.when('GET').respond(200, '', {});
         hb.expect('GET', '/match', undefined, {'Content-Type': 'application/json'});
 
@@ -1173,7 +1273,7 @@ describe('ngMock', function() {
       });
 
 
-      it ('should throw exception when only data differs from expectation', function() {
+      it('should throw exception when only data differs from expectation', function() {
         hb.when('GET').respond(200, '', {});
         hb.expect('GET', '/match', 'some-data');
 
@@ -1184,7 +1284,7 @@ describe('ngMock', function() {
       });
 
 
-      it ('should not throw an exception when parsed body is equal to expected body object', function() {
+      it('should not throw an exception when parsed body is equal to expected body object', function() {
         hb.when('GET').respond(200, '', {});
 
         hb.expect('GET', '/match', {a: 1, b: 2});
@@ -1199,7 +1299,7 @@ describe('ngMock', function() {
       });
 
 
-      it ('should throw exception when only parsed body differs from expected body object', function() {
+      it('should throw exception when only parsed body differs from expected body object', function() {
         hb.when('GET').respond(200, '', {});
         hb.expect('GET', '/match', {a: 1, b: 2});
 
@@ -1297,6 +1397,18 @@ describe('ngMock', function() {
       hb.verifyNoOutstandingExpectation();
       hb.verifyNoOutstandingRequest();
     });
+
+
+    it('should abort requests when timeout passed as a numeric value', inject(function($timeout) {
+      hb.expect('GET', '/url1').respond(200);
+
+      hb('GET', '/url1', null, callback, null, 200);
+      $timeout.flush(300);
+
+      expect(callback).toHaveBeenCalledWith(-1, undefined, '');
+      hb.verifyNoOutstandingExpectation();
+      hb.verifyNoOutstandingRequest();
+    }));
 
 
     it('should throw an exception if no response defined', function() {
@@ -1432,6 +1544,35 @@ describe('ngMock', function() {
       });
     });
 
+    describe('expectRoute/whenRoute shortcuts', function() {
+      angular.forEach(['expectRoute', 'whenRoute'], function(routeShortcut) {
+        var methods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'JSONP'];
+        they('should provide ' + routeShortcut + ' shortcut with $prop method', methods,
+          function() {
+            hb[routeShortcut](this, '/route').respond('path');
+            hb(this, '/route', undefined, callback);
+            hb.flush();
+            expect(callback).toHaveBeenCalledOnceWith(200, 'path', '', '');
+          }
+        );
+        they('should match colon deliminated parameters in ' + routeShortcut + ' $prop method', methods,
+          function() {
+            hb[routeShortcut](this, '/route/:id/path/:s_id').respond('path');
+            hb(this, '/route/123/path/456', undefined, callback);
+            hb.flush();
+            expect(callback).toHaveBeenCalledOnceWith(200, 'path', '', '');
+          }
+        );
+        they('should ignore query param when matching in ' + routeShortcut + ' $prop method', methods,
+          function() {
+            hb[routeShortcut](this, '/route/:id').respond('path');
+            hb(this, '/route/123?q=str&foo=bar', undefined, callback);
+            hb.flush();
+            expect(callback).toHaveBeenCalledOnceWith(200, 'path', '', '');
+          }
+        );
+      });
+    });
 
     describe('MockHttpExpectation', function() {
       /* global MockHttpExpectation */
@@ -1507,6 +1648,215 @@ describe('ngMock', function() {
       expect($rootElement.text()).toEqual('');
     }));
   });
+
+
+  describe('$rootScope', function() {
+    var destroyed = false;
+    var oldRootScope;
+
+    it('should destroy $rootScope after each test', inject(function($rootScope) {
+      $rootScope.$on('$destroy', function() {
+        destroyed = true;
+      });
+      oldRootScope = $rootScope;
+    }));
+
+    it('should have destroyed the $rootScope from the previous test', inject(function($rootScope) {
+      expect(destroyed).toBe(true);
+      expect($rootScope).not.toBe(oldRootScope);
+      expect(oldRootScope.$$destroyed).toBe(true);
+    }));
+  });
+
+
+  describe('$rootScopeDecorator', function() {
+
+    describe('$countChildScopes', function() {
+
+      it('should return 0 when no child scopes', inject(function($rootScope) {
+        expect($rootScope.$countChildScopes()).toBe(0);
+
+        var childScope = $rootScope.$new();
+        expect($rootScope.$countChildScopes()).toBe(1);
+        expect(childScope.$countChildScopes()).toBe(0);
+
+        var grandChildScope = childScope.$new();
+        expect(childScope.$countChildScopes()).toBe(1);
+        expect(grandChildScope.$countChildScopes()).toBe(0);
+      }));
+
+
+      it('should correctly navigate complex scope tree', inject(function($rootScope) {
+        var child;
+
+        $rootScope.$new();
+        $rootScope.$new().$new().$new();
+        child = $rootScope.$new().$new();
+        child.$new();
+        child.$new();
+        child.$new().$new().$new();
+
+        expect($rootScope.$countChildScopes()).toBe(11);
+      }));
+
+
+      it('should provide the current count even after child destructions', inject(function($rootScope) {
+        expect($rootScope.$countChildScopes()).toBe(0);
+
+        var childScope1 = $rootScope.$new();
+        expect($rootScope.$countChildScopes()).toBe(1);
+
+        var childScope2 = $rootScope.$new();
+        expect($rootScope.$countChildScopes()).toBe(2);
+
+        childScope1.$destroy();
+        expect($rootScope.$countChildScopes()).toBe(1);
+
+        childScope2.$destroy();
+        expect($rootScope.$countChildScopes()).toBe(0);
+      }));
+
+
+      it('should work with isolate scopes', inject(function($rootScope) {
+        /*
+                  RS
+                  |
+                 CIS
+                /   \
+              GCS   GCIS
+         */
+
+        var childIsolateScope = $rootScope.$new(true);
+        expect($rootScope.$countChildScopes()).toBe(1);
+
+        var grandChildScope = childIsolateScope.$new();
+        expect($rootScope.$countChildScopes()).toBe(2);
+        expect(childIsolateScope.$countChildScopes()).toBe(1);
+
+        var grandChildIsolateScope = childIsolateScope.$new(true);
+        expect($rootScope.$countChildScopes()).toBe(3);
+        expect(childIsolateScope.$countChildScopes()).toBe(2);
+
+        childIsolateScope.$destroy();
+        expect($rootScope.$countChildScopes()).toBe(0);
+      }));
+    });
+
+
+    describe('$countWatchers', function() {
+
+      it('should return the sum of watchers for the current scope and all of its children', inject(
+        function($rootScope) {
+
+          expect($rootScope.$countWatchers()).toBe(0);
+
+          var childScope = $rootScope.$new();
+          expect($rootScope.$countWatchers()).toBe(0);
+
+          childScope.$watch('foo');
+          expect($rootScope.$countWatchers()).toBe(1);
+          expect(childScope.$countWatchers()).toBe(1);
+
+          $rootScope.$watch('bar');
+          childScope.$watch('baz');
+          expect($rootScope.$countWatchers()).toBe(3);
+          expect(childScope.$countWatchers()).toBe(2);
+      }));
+
+
+      it('should correctly navigate complex scope tree', inject(function($rootScope) {
+        var child;
+
+        $rootScope.$watch('foo1');
+
+        $rootScope.$new();
+        $rootScope.$new().$new().$new();
+
+        child = $rootScope.$new().$new();
+        child.$watch('foo2');
+        child.$new();
+        child.$new();
+        child = child.$new().$new().$new();
+        child.$watch('foo3');
+        child.$watch('foo4');
+
+        expect($rootScope.$countWatchers()).toBe(4);
+      }));
+
+
+      it('should provide the current count even after child destruction and watch deregistration',
+          inject(function($rootScope) {
+
+        var deregisterWatch1 = $rootScope.$watch('exp1');
+
+        var childScope = $rootScope.$new();
+        childScope.$watch('exp2');
+
+        expect($rootScope.$countWatchers()).toBe(2);
+
+        childScope.$destroy();
+        expect($rootScope.$countWatchers()).toBe(1);
+
+        deregisterWatch1();
+        expect($rootScope.$countWatchers()).toBe(0);
+      }));
+
+
+      it('should work with isolate scopes', inject(function($rootScope) {
+        /*
+                 RS=1
+                   |
+                CIS=1
+                /    \
+            GCS=1  GCIS=1
+         */
+
+        $rootScope.$watch('exp1');
+        expect($rootScope.$countWatchers()).toBe(1);
+
+        var childIsolateScope = $rootScope.$new(true);
+        childIsolateScope.$watch('exp2');
+        expect($rootScope.$countWatchers()).toBe(2);
+        expect(childIsolateScope.$countWatchers()).toBe(1);
+
+        var grandChildScope = childIsolateScope.$new();
+        grandChildScope.$watch('exp3');
+
+        var grandChildIsolateScope = childIsolateScope.$new(true);
+        grandChildIsolateScope.$watch('exp4');
+
+        expect($rootScope.$countWatchers()).toBe(4);
+        expect(childIsolateScope.$countWatchers()).toBe(3);
+        expect(grandChildScope.$countWatchers()).toBe(1);
+        expect(grandChildIsolateScope.$countWatchers()).toBe(1);
+
+        childIsolateScope.$destroy();
+        expect($rootScope.$countWatchers()).toBe(1);
+      }));
+    });
+  });
+
+
+  describe('$controllerDecorator', function() {
+    it('should support creating controller with bindings', function() {
+      var called = false;
+      var data = [
+        { name: 'derp1', id: 0 },
+        { name: 'testname', id: 1 },
+        { name: 'flurp', id: 2 }
+      ];
+      module(function($controllerProvider) {
+        $controllerProvider.register('testCtrl', function() {
+          called = true;
+          expect(this.data).toBe(data);
+        });
+      });
+      inject(function($controller, $rootScope) {
+        $controller('testCtrl', { scope: $rootScope }, { data: data });
+        expect(called).toBe(true);
+      });
+    });
+  });
 });
 
 
@@ -1568,4 +1918,192 @@ describe('ngMockE2E', function() {
       }));
     });
   });
+
+  describe('ngAnimateMock', function() {
+
+    beforeEach(module('ngAnimate'));
+    beforeEach(module('ngAnimateMock'));
+
+    var ss, element, trackedAnimations;
+
+    afterEach(function() {
+      if (element) {
+        element.remove();
+      }
+      if (ss) {
+        ss.destroy();
+      }
+    });
+
+    beforeEach(module(function($animateProvider) {
+      trackedAnimations = [];
+      $animateProvider.register('.animate', function() {
+        return {
+          leave: logFn('leave'),
+          addClass: logFn('addClass')
+        };
+
+        function logFn(method) {
+          return function(element) {
+            trackedAnimations.push(getDoneCallback(arguments));
+          };
+        }
+
+        function getDoneCallback(args) {
+          for (var i = args.length; i > 0; i--) {
+            if (angular.isFunction(args[i])) return args[i];
+          }
+        }
+      });
+
+      return function($animate, $rootElement, $document, $rootScope, $window) {
+        ss = createMockStyleSheet($document, $window);
+
+        element = angular.element('<div class="animate"></div>');
+        $rootElement.append(element);
+        angular.element($document[0].body).append($rootElement);
+        $animate.enabled(true);
+        $rootScope.$digest();
+      };
+    }));
+
+    describe('$animate.queue', function() {
+      it('should maintain a queue of the executed animations', inject(function($animate) {
+        element.removeClass('animate'); // we don't care to test any actual animations
+        var options = {};
+
+        $animate.addClass(element, 'on', options);
+        var first = $animate.queue[0];
+        expect(first.element).toBe(element);
+        expect(first.event).toBe('addClass');
+        expect(first.options).toBe(options);
+
+        $animate.removeClass(element, 'off', options);
+        var second = $animate.queue[1];
+        expect(second.element).toBe(element);
+        expect(second.event).toBe('removeClass');
+        expect(second.options).toBe(options);
+
+        $animate.leave(element, options);
+        var third = $animate.queue[2];
+        expect(third.element).toBe(element);
+        expect(third.event).toBe('leave');
+        expect(third.options).toBe(options);
+      }));
+    });
+
+    describe('$animate.flush()', function() {
+      it('should throw an error if there is nothing to animate', inject(function($animate) {
+        expect(function() {
+          $animate.flush();
+        }).toThrow('No pending animations ready to be closed or flushed');
+      }));
+
+      it('should trigger the animation to start',
+        inject(function($animate) {
+
+        expect(trackedAnimations.length).toBe(0);
+        $animate.leave(element);
+        $animate.flush();
+        expect(trackedAnimations.length).toBe(1);
+      }));
+
+      it('should trigger the animation to end once run and called',
+        inject(function($animate) {
+
+        $animate.leave(element);
+        $animate.flush();
+        expect(element.parent().length).toBe(1);
+
+        trackedAnimations[0]();
+        $animate.flush();
+        expect(element.parent().length).toBe(0);
+      }));
+
+      it('should trigger the animation promise callback to fire once run and closed',
+        inject(function($animate) {
+
+        var doneSpy = jasmine.createSpy();
+        $animate.leave(element).then(doneSpy);
+        $animate.flush();
+
+        trackedAnimations[0]();
+        expect(doneSpy).not.toHaveBeenCalled();
+        $animate.flush();
+        expect(doneSpy).toHaveBeenCalled();
+      }));
+
+      it('should trigger a series of CSS animations to trigger and start once run',
+        inject(function($animate, $rootScope) {
+
+        if (!browserSupportsCssAnimations()) return;
+
+        ss.addRule('.leave-me.ng-leave', 'transition:1s linear all;');
+
+        var i, elm, elms = [];
+        for (i = 0; i < 5; i++) {
+          elm = angular.element('<div class="leave-me"></div>');
+          element.append(elm);
+          elms.push(elm);
+
+          $animate.leave(elm);
+        }
+
+        $rootScope.$digest();
+
+        for (i = 0; i < 5; i++) {
+          elm = elms[i];
+          expect(elm.hasClass('ng-leave')).toBe(true);
+          expect(elm.hasClass('ng-leave-active')).toBe(false);
+        }
+
+        $animate.flush();
+
+        for (i = 0; i < 5; i++) {
+          elm = elms[i];
+          expect(elm.hasClass('ng-leave')).toBe(true);
+          expect(elm.hasClass('ng-leave-active')).toBe(true);
+        }
+      }));
+
+      it('should trigger parent and child animations to run within the same flush',
+        inject(function($animate, $rootScope) {
+
+        var child = angular.element('<div class="animate child"></div>');
+        element.append(child);
+
+        expect(trackedAnimations.length).toBe(0);
+
+        $animate.addClass(element, 'go');
+        $animate.addClass(child, 'start');
+        $animate.flush();
+
+        expect(trackedAnimations.length).toBe(2);
+      }));
+
+      it('should trigger animation callbacks when called',
+        inject(function($animate, $rootScope) {
+
+        var spy = jasmine.createSpy();
+        $animate.on('addClass', element, spy);
+
+        $animate.addClass(element, 'on');
+        expect(spy).not.toHaveBeenCalled();
+
+        $animate.flush();
+        expect(spy.callCount).toBe(1);
+
+        trackedAnimations[0]();
+        $animate.flush();
+        expect(spy.callCount).toBe(2);
+      }));
+    });
+  });
+});
+
+describe('make sure that we can create an injector outside of tests', function() {
+  //since some libraries create custom injectors outside of tests,
+  //we want to make sure that this is not breaking the internals of
+  //how we manage annotated function cleanup during tests. See #10967
+  angular.injector([function($injector) {}]);
 });

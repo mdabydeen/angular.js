@@ -34,6 +34,15 @@ $provide.value("$locale", {
       "venerd\u00ec",
       "sabato"
     ],
+    "ERANAMES": [
+      "a.C.",
+      "d.C."
+    ],
+    "ERAS": [
+      "aC",
+      "dC"
+    ],
+    "FIRSTDAYOFWEEK": 0,
     "MONTH": [
       "gennaio",
       "febbraio",
@@ -71,10 +80,28 @@ $provide.value("$locale", {
       "nov",
       "dic"
     ],
+    "STANDALONEMONTH": [
+      "Gennaio",
+      "Febbraio",
+      "Marzo",
+      "Aprile",
+      "Maggio",
+      "Giugno",
+      "Luglio",
+      "Agosto",
+      "Settembre",
+      "Ottobre",
+      "Novembre",
+      "Dicembre"
+    ],
+    "WEEKENDRANGE": [
+      5,
+      6
+    ],
     "fullDate": "EEEE d MMMM y",
-    "longDate": "dd MMMM y",
-    "medium": "dd/MMM/y HH:mm:ss",
-    "mediumDate": "dd/MMM/y",
+    "longDate": "d MMMM y",
+    "medium": "dd MMM y HH:mm:ss",
+    "mediumDate": "dd MMM y",
     "mediumTime": "HH:mm:ss",
     "short": "dd/MM/yy HH:mm",
     "shortDate": "dd/MM/yy",
